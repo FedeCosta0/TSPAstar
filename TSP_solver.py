@@ -1,17 +1,13 @@
-import sys
 import heapq
 import time
+import argparse
 import numpy as np
 from math import sqrt
 from random import randint
 from typing import Tuple, Set, Dict, List, FrozenSet
 import matplotlib.pyplot as plt
 
-
 INF = 99999
-NUM_CITIES = 10
-MAP_SIZE = 10
-NUM_RUNS = 1
 
 
 #   euclidean distance between two cities
@@ -43,7 +39,7 @@ class Node:
 
 
 class Problem:
-    def __init__(self, map_size: int, num_cities: int):
+    def __init__(self, map_size: int, num_cities: int, cities: List[Tuple[int, int]]):
         if num_cities > map_size ** 2:
             raise ValueError("Too many cities for the map size")
 
@@ -52,17 +48,20 @@ class Problem:
 
         #  initialize random cities
         self.cities_indexes: Dict[Tuple[int, int], int] = dict()
-        self.cities: FrozenSet[Tuple[int, int]] = self.init_cities()
+        self.initial_city: Tuple[int, int] = (-1, -1)
+        if len(cities) == 0:
+            self.cities: FrozenSet[Tuple[int, int]] = self.init_random_cities()
+        else:
+            self.cities: FrozenSet[Tuple[int, int]] = self.init_cities(cities=cities)
 
         self.adjacency_matrix: np.ndarray = self.init_adjacency_matrix(cities=self.cities)
 
-        #  the city for the initial state is selected from the set of cities with 'min' to not remove it with 'pop'
-        self.initial_state = State(visited_cities=frozenset({min(self.cities)}), current_city=min(self.cities))
+        self.initial_state = State(visited_cities=frozenset({self.initial_city}), current_city=self.initial_city)
 
         # the goal state is reached when we have visited all cities and the current city is the initial city
         self.goal_state = State(visited_cities=self.cities, current_city=self.initial_state.current_city)
 
-    def init_cities(self):
+    def init_random_cities(self):
         tmp: Set[Tuple[int, int]] = set()
         city_index = 0
         while len(tmp) < self.num_cities:
@@ -70,9 +69,21 @@ class Problem:
             y = randint(0, self.map_size)
             #  check if a city in position (x,y) already exists
             if not (x, y) in tmp:
+                if city_index == 0:
+                    self.initial_city = (x, y)
                 tmp.add((x, y))
                 self.cities_indexes[(x, y)] = city_index
                 city_index += 1
+        res = frozenset(tmp)
+        return res
+
+    def init_cities(self, cities: List[Tuple[int, int]]):
+        tmp: Set[Tuple[int, int]] = set()
+        for i, city in enumerate(cities):
+            if i == 0:
+                self.initial_city = city
+            tmp.add(city)
+            self.cities_indexes[city] = i
         res = frozenset(tmp)
         return res
 
@@ -116,11 +127,11 @@ class Problem:
         return res
 
     #  helper method for building mst
-    @staticmethod
-    def min_distances(distances, mst_set, num_vertices) -> [int, float]:
+
+    def min_distances(self, distances, mst_set, unvisited_cities_indexes) -> [int, float]:
         min_distance = INF
         min_index = -1
-        for v in range(num_vertices):
+        for v in unvisited_cities_indexes:
             if distances[v] < min_distance and mst_set[v] is False:
                 min_distance = distances[v]
                 min_index = v
@@ -152,10 +163,10 @@ class Problem:
                 min_dist_to_initial_city = d
 
         #  initialize the set of nodes in mst
-        mst_set = [False for _ in range(len(unvisited_cities))]
+        mst_set = [False for _ in range(len(self.cities))]
 
         #  initialize distances of nodes from current mst
-        distances = [INF for _ in range(len(unvisited_cities))]
+        distances = [INF for _ in range(len(self.cities))]
 
         #  select node at index 0 as the first node of mst
         distances[0] = 0
@@ -163,7 +174,8 @@ class Problem:
         mst_weight = 0
         for _ in range(len(unvisited_cities)):
             #  u is the node with minimum distance from current mst
-            u, dist = self.min_distances(distances=distances, mst_set=mst_set, num_vertices=len(unvisited_cities))
+            u, dist = self.min_distances(distances=distances, mst_set=mst_set,
+                                         unvisited_cities_indexes=unvisited_cities_indexes)
 
             #  insert the node in mst and update mst weight
             mst_set[u] = True
@@ -171,10 +183,10 @@ class Problem:
 
             # updates the distances from the current mst of nodes that are not in mst yet
             # and that can be reached by u at a cost less than the cost in memory
-            for i, v in enumerate(unvisited_cities_indexes):
-                if mst_set[i] is False and self.adjacency_matrix[u, v] < distances[i]\
+            for v in unvisited_cities_indexes:
+                if mst_set[v] is False and self.adjacency_matrix[u, v] < distances[v] \
                         and self.adjacency_matrix[u, v] != 0:
-                    distances[i] = self.adjacency_matrix[u, v]
+                    distances[v] = self.adjacency_matrix[u, v]
         return mst_weight + min_dist_to_initial_city
 
     def print_cities(self):
@@ -221,24 +233,14 @@ def a_star_search(problem: Problem):
     return None
 
 
-#  test and show result
-def test():
-    total_execution_time = 0
-    for _ in range(NUM_RUNS):
-        problem = Problem(map_size=MAP_SIZE, num_cities=NUM_CITIES)
-        start_time = time.time()
-        a_star_search(problem=problem)
-        end_time = time.time()
-        total_execution_time += end_time - start_time
-    average_execution_time = total_execution_time / NUM_RUNS
-    average_execution_time = round(average_execution_time, 3)
-    print("Average execution time with " + str(NUM_CITIES) + " cities and " + str(MAP_SIZE) + " map size: " + str(
-        average_execution_time) + "s")
-    print("Executed " + str(NUM_RUNS) + " times")
+def show_result(num_cities, map_size, cities: List[Tuple[int, int]]):
+    for i in range(len(cities)):
+        cities[i] = tuple(cities[i])
+    num_c = num_cities[0]
+    map_s = map_size[0]
 
+    problem = Problem(map_size=map_s, num_cities=num_c, cities=cities)
 
-def show_result(num_cities: int, map_size: int):
-    problem = Problem(map_size=map_size, num_cities=num_cities)
     print("List of cities:")
     problem.print_cities()
     start_time = time.time()
@@ -261,10 +263,10 @@ def show_result(num_cities: int, map_size: int):
         n = n.parent
     fig = plt.figure()
     ax = fig.gca()
-    ax.set_xticks(np.arange(0, map_size + 2, 1))
-    ax.set_yticks(np.arange(0, map_size + 2, 1))
-    plt.xlim(-1, map_size + 1)
-    plt.ylim(-1, map_size + 1)
+    ax.set_xticks(np.arange(0, map_s + 2, 1))
+    ax.set_yticks(np.arange(0, map_s + 2, 1))
+    plt.xlim(-1, map_s + 1)
+    plt.ylim(-1, map_s + 1)
     plt.grid()
     for i in range(len(X) - 2):
         plt.plot([X[i], X[i + 1]], [Y[i], Y[i + 1]], marker='o')
@@ -272,7 +274,18 @@ def show_result(num_cities: int, map_size: int):
     plt.show()
 
 
+def pair(arg):
+    return [int(x) for x in arg.split(',')]
+
+
 if __name__ == "__main__":
-    num_cities = int(sys.argv[1])
-    map_size = int(sys.argv[2])
-    show_result(num_cities=num_cities, map_size=map_size)
+    CLI = argparse.ArgumentParser()
+    CLI.add_argument("--num_cities", nargs="*", type=int, default=0)
+    CLI.add_argument("--map_size", nargs="*", type=int, default=0)
+    CLI.add_argument('--cities', type=pair, nargs='+', default=[])
+    args = CLI.parse_args()
+
+    num_cities = args.num_cities
+    map_size = args.map_size
+    cities = args.cities
+    show_result(num_cities=num_cities, map_size=map_size, cities=cities)
